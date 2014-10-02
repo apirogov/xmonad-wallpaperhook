@@ -27,7 +27,6 @@ library
                      , random
                      , xmonad >=0.11
                      , xmonad-contrib >=0.11
-  hs-source-dirs:      src
   exposed-modules:     XMonad.Hooks.WallpaperSetter
   default-language:    Haskell2010
 

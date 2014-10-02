@@ -16,9 +16,9 @@ module XMonad.Hooks.WallpaperSetter (
   wallpaperSetter
 , WallpaperConf(..)
 , Wallpaper(..)
+, WallpaperList(..)
 , defWallpaperConf
 , defWPNames
-, modWPList
   -- *TODO
   -- $todo
 ) where
@@ -41,6 +41,7 @@ import Data.Ord (comparing)
 
 import Control.Monad (when, unless, join)
 import Data.Maybe (isNothing, fromJust, fromMaybe)
+import Data.Monoid
 
 -- $usage
 -- This module requires imagemagick and feh to be installed, as these are utilized
@@ -52,13 +53,14 @@ import Data.Maybe (isNothing, fromJust, fromMaybe)
 -- > ...
 -- > main = xmonad $ defaultConfig {
 -- >   logHook = wallpaperSetter defWallpaperConf {
--- >                                wallpapers=defWPNames myWorkspaces `modWPList` [("1:main",WallpaperDir "1")]
+-- >                                wallpapers = defWPNames myWorkspaces
+-- >                                          <> WallpaperList [("1:main",WallpaperDir "1")]
 -- >                             }
 -- >   }
 -- > ...
 
 -- $todo
--- * Implement a kind of image cache like in wallpaperd to remove or at least reduce the lag
+-- * implement a kind of image cache like in wallpaperd to remove or at least reduce the lag
 --
 -- * find out how to merge multiple images from stdin to one (-> for caching all pictures in memory)
 
@@ -72,21 +74,26 @@ data Wallpaper = WallpaperFix FilePath -- ^ Single, fixed wallpaper
                | WallpaperDir FilePath -- ^ Random wallpaper from this subdirectory
                deriving (Eq, Show, Read)
 
--- | Use this function for example if you use the defWPNames function, but want to modify a single entry
-w1 `modWPList` w2 = M.toList $ (M.fromList w2) `M.union` (M.fromList w1)
+newtype WallpaperList = WallpaperList [(WorkspaceId, Wallpaper)]
+  deriving (Show,Read)
+
+instance Monoid WallpaperList where
+  mempty = WallpaperList []
+  mappend (WallpaperList w1) (WallpaperList w2) =
+    WallpaperList $ M.toList $ (M.fromList w2) `M.union` (M.fromList w1)
 
 -- | Complete wallpaper configuration passed to the hook
 data WallpaperConf = WallpaperConf {
     wallpaperBaseDir :: FilePath  -- ^ Where the wallpapers reside (if empty, will look in ~/.wallpapers/)
-  , wallpapers :: [(WorkspaceId, Wallpaper)] -- ^ List of the wallpaper associations for workspaces
+  , wallpapers :: WallpaperList   -- ^ List of the wallpaper associations for workspaces
   } deriving (Show, Read)
 
 -- | default configuration. looks in \~\/.wallpapers/ for WORKSPACEID.jpg
-defWallpaperConf = WallpaperConf "" []
+defWallpaperConf = WallpaperConf "" $ WallpaperList []
 
 -- |returns the default association list (maps name to name.jpg)
-defWPNames :: [WorkspaceId] -> [(WorkspaceId, Wallpaper)]
-defWPNames = map (\x -> (x,WallpaperFix (filter isAlphaNum x++".jpg")))
+defWPNames :: [WorkspaceId] -> WallpaperList
+defWPNames xs = WallpaperList $ map (\x -> (x,WallpaperFix (filter isAlphaNum x++".jpg"))) xs
 
 -- | Add this to your log hook with the workspace configuration as argument.
 wallpaperSetter :: WallpaperConf -> X ()
@@ -95,7 +102,7 @@ wallpaperSetter wpconf = do
   let oldws = fromMaybe "" $ M.lookup "oldws" $ M.fromList st
   visws <- getVisibleWorkspaces
   when (show visws /= oldws) (do
-    debug $ show visws
+    -- debug $ show visws
 
     wpconf' <- completeWPConf wpconf
     wspicpaths <- getPicPathsAndWSRects wpconf'
@@ -141,12 +148,12 @@ getPicRes picpath = do
 -- |complete unset fields to default values (wallpaper directory = ~/.wallpapers,
 --  expects a file "NAME.jpg" for each workspace named NAME)
 completeWPConf :: WallpaperConf -> X WallpaperConf
-completeWPConf (WallpaperConf dir ws) = do
+completeWPConf (WallpaperConf dir (WallpaperList ws)) = do
   home <- liftIO getHomeDirectory
   winset <- gets windowset
   let tags = map S.tag $ S.workspaces winset
       dir' = if null dir then home </> ".wallpapers" else dir
-      ws'  = if null ws then defWPNames tags else ws
+      ws'  = if null ws then defWPNames tags else WallpaperList ws
   return (WallpaperConf dir' ws')
 
 getVisibleWorkspaces :: X [WorkspaceId]
@@ -165,7 +172,9 @@ getPicPathsAndWSRects wpconf = do
       getRect tag = screenRect $ fromJust $ M.lookup tag visrects
       foundpaths = map (\(n,Just p)->(getRect n,p)) $ filter hasPicAndIsVisible paths
   return foundpaths
-  where getPicPaths wpconf = mapM (\(x,y) -> getPicPath wpconf y >>= \p -> return (x,p)) $ wallpapers wpconf
+  where getPicPaths wpconf = mapM (\(x,y) -> getPicPath wpconf y
+                             >>= \p -> return (x,p)) wl
+        WallpaperList wl   = wallpapers wpconf
 
 -- | Gets a list of geometry rectangles and filenames, builds and sets wallpaper
 applyWallpaper :: [(Rectangle, FilePath)] -> X ()
