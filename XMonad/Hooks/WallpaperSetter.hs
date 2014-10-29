@@ -64,10 +64,10 @@ import Data.Monoid
 --
 -- * find out how to merge multiple images from stdin to one (-> for caching all pictures in memory)
 
--- | internal. to use XMonad state for memory in-between log-hook calls
-data WCState = WCState [(String,String)] deriving Typeable
+-- | internal. to use XMonad state for memory in-between log-hook calls and remember PID of old external call
+data WCState = WCState [(String,String)] (Maybe ProcessHandle) deriving Typeable
 instance ExtensionClass WCState where
-  initialValue = WCState []
+  initialValue = WCState [] Nothing
 
 -- | Represents a wallpaper
 data Wallpaper = WallpaperFix FilePath -- ^ Single, fixed wallpaper
@@ -98,19 +98,22 @@ defWPNames xs = WallpaperList $ map (\x -> (x,WallpaperFix (filter isAlphaNum x+
 -- | Add this to your log hook with the workspace configuration as argument.
 wallpaperSetter :: WallpaperConf -> X ()
 wallpaperSetter wpconf = do
-  WCState st <- XS.get
+  WCState st h <- XS.get
   let oldws = fromMaybe "" $ M.lookup "oldws" $ M.fromList st
   visws <- getVisibleWorkspaces
-  when (show visws /= oldws) (do
+  when (show visws /= oldws) $ do
     -- debug $ show visws
 
     wpconf' <- completeWPConf wpconf
     wspicpaths <- getPicPathsAndWSRects wpconf'
-    applyWallpaper wspicpaths
 
-    XS.put $ WCState [("oldws", show visws)]
-    )
-  return ()
+    -- terminate old call if any to prevent unnecessary CPU overload when switching WS too fast
+    case h of
+      Nothing -> return ()
+      Just pid -> liftIO $ terminateProcess pid
+
+    handle <- applyWallpaper wspicpaths
+    XS.put $ WCState [("oldws", show visws)] $ Just handle
 
 -- Helper functions
 -------------------
@@ -118,7 +121,7 @@ wallpaperSetter wpconf = do
 -- | Picks a random element from a list
 pickFrom :: [a] -> IO a
 pickFrom list = do
-  i <- getStdRandom (randomR (0,length list - 1))
+  i <- getStdRandom $ randomR (0,length list - 1)
   return $ list !! i
 
 -- | get absolute picture path of the given wallpaper picture
@@ -177,7 +180,7 @@ getPicPathsAndWSRects wpconf = do
         WallpaperList wl   = wallpapers wpconf
 
 -- | Gets a list of geometry rectangles and filenames, builds and sets wallpaper
-applyWallpaper :: [(Rectangle, FilePath)] -> X ()
+applyWallpaper :: [(Rectangle, FilePath)] -> X ProcessHandle
 applyWallpaper parts = do
   winset <- gets windowset
   let (vx,vy) = getVScreenDim winset
@@ -186,7 +189,6 @@ applyWallpaper parts = do
       endpart =" jpg:- | feh --no-xinerama --bg-tile --no-fehbg -"
       cmd = basepart ++ (concat $ intersperse " " layers) ++ endpart
   liftIO $ runCommand cmd
-  return ()
   where
   getVScreenDim = foldr maxXY (0,0) . map (screenRect . S.screenDetail) . S.screens
     where maxXY (Rectangle x y w h) (mx,my) = ( fromIntegral ((fromIntegral x)+w) `max` mx
