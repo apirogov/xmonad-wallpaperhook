@@ -2,9 +2,10 @@
 -----------------------------------
 -- |
 -- Module      : XMonad.Hooks.WallpaperSetter
--- Description : Log hook which changes the wallpapers depending on visible workspaces.
 -- Copyright   : (c) Anton Pirogov, 2014
 -- License     : BSD3
+--
+-- Maintainer  : Anton Pirogov <anton.pirogov@gmail.com>
 -- Stability   : unstable
 -- Portability : unportable
 --
@@ -47,6 +48,10 @@ import Data.Monoid
 -- This module requires imagemagick and feh to be installed, as these are utilized
 -- for the required image transformations and the actual setting of the wallpaper.
 --
+-- This was especially tested with multi-head setups - if you have two monitors and swap
+-- the workspaces, the wallpapers will be swapped too, scaled accordingly and rotated if necessary
+-- (e.g. if you are using your monitor rotated but only have wide wallpapers).
+--
 -- Add a log hook like this:
 --
 -- > myWorkspaces = ["1:main","2:misc","3","4"]
@@ -84,14 +89,14 @@ instance Monoid WallpaperList where
 
 -- | Complete wallpaper configuration passed to the hook
 data WallpaperConf = WallpaperConf {
-    wallpaperBaseDir :: FilePath  -- ^ Where the wallpapers reside (if empty, will look in ~/.wallpapers/)
+    wallpaperBaseDir :: FilePath  -- ^ Where the wallpapers reside (if empty, will look in \~\/.wallpapers/)
   , wallpapers :: WallpaperList   -- ^ List of the wallpaper associations for workspaces
   } deriving (Show, Read)
 
 -- | default configuration. looks in \~\/.wallpapers/ for WORKSPACEID.jpg
 defWallpaperConf = WallpaperConf "" $ WallpaperList []
 
--- |returns the default association list (maps name to name.jpg)
+-- |returns the default association list (maps name to name.jpg, non-alphanumeric characters are omitted)
 defWPNames :: [WorkspaceId] -> WallpaperList
 defWPNames xs = WallpaperList $ map (\x -> (x,WallpaperFix (filter isAlphaNum x++".jpg"))) xs
 
@@ -215,26 +220,3 @@ splitRes str = ret
   where toks = map (\x -> read x :: Int) $ split "x" str
         ret  = if length toks < 2 then Nothing else Just (toks!!0,toks!!1)
 
-{-
-loadPic :: FilePath -> IO (Maybe B.ByteString)
-loadPic path = do
-  exist <- doesFileExist path
-  if exist
-     then join.return.fmap Just $ B.readFile path
-     else return Nothing
-
--- | Takes picture as bytestring, sets as tiled xinerama wallpaper with feh
-setWallpaper :: B.ByteString -> IO ()
-setWallpaper picraw = do
-  (inp,out,err,pid) <- createProcess $ CreateProcess{
-    cmdspec = RawCommand "feh" ["--no-xinerama", "--no-fehbg", "--bg-tile", "-"]
-  , cwd = Nothing, env = Nothing, std_out = CreatePipe, std_err = CreatePipe
-  , close_fds = False, create_group = False, std_in = CreatePipe
-  }
-  unless (isNothing inp) (do
-    let inh = fromJust inp
-    B.hPutStr inh picraw
-    hFlush inh
-    hClose inh
-    )
--}
