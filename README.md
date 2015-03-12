@@ -1,6 +1,8 @@
 xmonad-wallpaperhook
 ====================
 
+**This is now in xmonad-contrib-darcs! If you just want to install it, get it there!**
+
 This is my log hook for xmonad to set different wallpapers for each workspace.
 
 The runtime dependencies are imagemagick and feh (the CLI tools should be installed).
@@ -25,15 +27,5 @@ If you come up with some hack to speed this up, a pull request is appreciated.
 This is my first xmonad extension and the code is rather ugly as I don't know better,
 so I also appreciate refactoring of this code or some tips. In the current condition I
 won't even try to submit this to the official xmonad-contrib package.
-
-How to install
---------------
-<pre>
-git clone https://github.com/apirogov/xmonad-wallpaperhook.git
-cd xmonad-wallpaperhook
-cabal configure
-cabal haddock
-cabal install
-</pre>
 
 Look at the haddock documentation to see how to integrate it into your xmonad.hs.
